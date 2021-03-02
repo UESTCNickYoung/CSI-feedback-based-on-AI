@@ -8,7 +8,7 @@ from torch.utils.data import Dataset
 from collections import OrderedDict
 
 
-NUM_FEEDBACK_BITS = 420  # pytorch版本一定要有这个参数
+NUM_FEEDBACK_BITS = 8*10*3*2  # pytorch版本一定要有这个参数
 
 #=======================================================================================================================
 #=======================================================================================================================
@@ -275,14 +275,13 @@ class Encoder(nn.Module):
     def __init__(self, feedback_bits, quantization=True):
         num_quan_bits = 3
         super(Encoder, self).__init__()
-        self.conv_input = ConvBN(32, 128, 1)
+        self.conv_input = ConvBN(8, 128, 5)
         # self.pad = nn.ZeroPad2d(padding=(2, 2, 0, 0))
         self.relu1 = nn.LeakyReLU(0.2)
         self.passthrough = Passthroughlayer(16, 20, 2)        # 8， 10
-        self.passthrough2 = Passthroughlayer(8, 10, 8)   # 4, 5
         # self.CRBlock = CRBlock()
-        self.res1 = BottleneckResBlock(128, 128*6)
-        self.res2 = BottleneckResBlock(128, 128*6)
+        self.res1 = BottleneckResBlock(128, 128*4)
+        self.res2 = BottleneckResBlock(128, 128*4)
         self.res3 = ResBlock(128, 256)
         self.res4 = ResBlock(128, 256)
         self.res5 = ResBlock(128, 256)
@@ -290,7 +289,7 @@ class Encoder(nn.Module):
         # self.SEBlock = SEBottleneck(256, 256)
         self.conv_output_1 = ConvBN(128, 32, 3)
         self.relu2 = nn.ReLU()
-        self.conv_output_2 = nn.Conv2d(32, 7, 1)
+        self.conv_output_2 = nn.Conv2d(32, 2, 1)
         self.sig = nn.Sigmoid()
         self.quantize = QuantizationLayer(num_quan_bits)
         self.quantization = quantization
@@ -300,13 +299,12 @@ class Encoder(nn.Module):
         x = torch.cat((x[:, :, :, 20:24], x[:, :, :, 0:16]), dim=3)  # batch, 2, 16, 20
 
         out = self.passthrough(x)
-        out = self.passthrough2(out)
         out = self.relu1(self.conv_input(out))
         # out = self.CRBlock(out)
         out = self.res3(self.res2(self.res1(out)))
         out = self.res6(self.res5(self.res4(out)))
         out = self.conv_output_2(self.relu2(self.conv_output_1(out)))  # batch, 4, 16, 2
-        out = out.view(-1, 4*5*7)
+        out = out.view(-1, 8*10*2)
         out = self.sig(out)
 
         if self.quantization:
@@ -324,8 +322,8 @@ class Decoder(nn.Module):
         self.feedback_bits = feedback_bits
         self.dequantize = DequantizationLayer(num_quan_bits)
         # self.conv_input = nn.ConvTranspose2d(2, 128, 4, stride=2, padding=[1, 1])
-        self.conv_input = ConvBN(7, 128*16, 3)
-        self.px = nn.PixelShuffle(4)
+        self.conv_input = ConvBN(2, 128*4, 3)
+        self.px = nn.PixelShuffle(2)
         # self.conv_input2 = ConvBN(1, 200, 3)
         self.relu1 = nn.LeakyReLU(0.2)
 
@@ -344,7 +342,7 @@ class Decoder(nn.Module):
             out = self.dequantize(x)
         else:
             out = x
-        out = out.view(-1, 7, 4, 5)
+        out = out.view(-1, 2, 8, 10)
         # out = self.pad(out)
         out = self.px(self.conv_input(out))  # 4, 8, 10
         # out = self.depass(out)
